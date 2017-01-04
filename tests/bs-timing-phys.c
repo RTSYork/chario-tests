@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/ioctl.h>
 #include "proftimer.h"
 #include "chario.h"
 #include "output.h"
@@ -12,14 +13,15 @@
 
 #define RAND_SEED 1
 #define BLOCK 4096
-#define BUFF_SIZE (256*1024*1024) // 256MiB
-#define MAX_BUFF_OFFSET ((BUFF_SIZE-(2*1024*1024))/BLOCK) // 254MiB / 4KiB blocks
+#define DDR_START 0x20000000
+#define DDR_SIZE 0x20000000 // 512MiB
+#define MAX_BUFF_OFFSET ((DDR_SIZE-(2*1024*1024))/BLOCK) // 510MiB / 4KiB blocks
 #define DEV_SECTS 97677846 // 97677846 sectors * 4096 bytes = 400088457216 bytes (~400GB SSD)
 #define MAX_DEV_OFFSET (DEV_SECTS-512) // 512 sectors (2MiB) from end of device
 
 void cleanup(void);
 
-uint8_t buff[BUFF_SIZE];
+uint8_t *buff;
 int fd;
 int mfd;
 uint32_t *proftimers_mem;
@@ -32,10 +34,11 @@ size_t read_size;
 size_t read_sizes[] = {BLOCK, BLOCK*2, BLOCK*4, BLOCK*8, BLOCK*16, BLOCK*32, BLOCK*64, BLOCK*128, BLOCK*256, BLOCK*512};
 int num_sizes = NELEMS(read_sizes);
 timeStamp tag_times[65536];
+struct chario_phys_io io;
 
 int main(int argc __attribute__((unused)), char *argv[] __attribute__((unused))) {
 
-	fprintf(stderr, "-- CharIORT Block Size Test --\n");
+	fprintf(stderr, "-- CharIORT Block Size Test (with physical addressing) --\n");
 
 	mfd = open("/dev/mem", O_RDWR | O_SYNC);
 	if (mfd == -1) {
@@ -47,6 +50,13 @@ int main(int argc __attribute__((unused)), char *argv[] __attribute__((unused)))
 	proftimers_mem = mmap(NULL, PROFTIMER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, PROFTIMER_BASE);
 	if (proftimers_mem == MAP_FAILED) {
 		perror("Can't map timers memory");
+		cleanup();
+		return 1;
+	}
+
+	buff = mmap(NULL, DDR_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, DDR_START);
+	if (buff == MAP_FAILED) {
+		perror("Can't map buffer memory");
 		cleanup();
 		return 1;
 	}
@@ -78,9 +88,12 @@ int main(int argc __attribute__((unused)), char *argv[] __attribute__((unused)))
 				break;
 			}
 
+			io.address = (__u64)(DDR_START + buff_offset);
+			io.length = read_size;
+
 			tag(proftimers_mem, 0x01); // read-start
 
-			read_result = read(fd, &(buff[buff_offset]), read_size);
+			read_result = ioctl(fd, CHARIO_IOCTL_READ_PHYS, &io);
 
 			tag(proftimers_mem, 0x02); // read-end
 
@@ -133,6 +146,7 @@ void cleanup() {
 	fprintf(stderr, "Cleaning up...\n");
 	disable_kernel_timers();
 	munmap(proftimers_mem, PROFTIMER_SIZE);
+	munmap(buff, DDR_SIZE);
 	close(mfd);
 	close(fd);
 }
