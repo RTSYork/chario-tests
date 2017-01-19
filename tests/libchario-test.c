@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <errno.h>
+#include <linux/stddef.h>
 #include "libchario.h"
 
 struct chario_task task1;
@@ -21,7 +22,7 @@ int main(int argc __attribute__((unused)), char *argv[] __attribute__((unused)))
 
 	printf("\n** libchario test started **\n\n");
 
-	buffer = chario_init_device();
+	buffer = chario_init_device(false);
 	if (buffer == 0) {
 		return errno;
 	}

@@ -21,7 +21,9 @@
  * The following are taken from "<linux-4.8>/include/linux/types.h"
  ********************************************************************************/
 
+#ifndef bool
 typedef _Bool bool;
+#endif
 
 struct list_head {
     struct list_head *next, *prev;

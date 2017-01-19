@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <sys/types.h>
 #include "list.h"
 
@@ -27,7 +28,7 @@ struct chario_blocks_range {
 };
 
 
-uint64_t *chario_init_device(void);
+uint64_t *chario_init_device(bool phys_addressing);
 int chario_close_device(void);
 
 int chario_init_task(struct chario_task *task, int id);

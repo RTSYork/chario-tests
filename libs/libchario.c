@@ -15,30 +15,33 @@
 #define DDR_SIZE 0x10000000 //0x20000000
 #define DDR_START 0x20000000
 
-#define USE_PHYS
-
 int fd = -1;
 int mfd = -1;
 uint64_t *buffer;
+bool use_phys;
 
 
-uint64_t *chario_init_device(void) {
-	dbg_print("chario_init_device");
+uint64_t *chario_init_device(bool phys_addressing) {
+	dbg_print("chario_init_device(%d)", phys);
 	fd = open("/dev/chardisk0", O_RDWR);
 	dbg_print("    fd = %d", fd);
 	if (fd < 0) {
 		perror("Failed to open the device");
 		return 0;
 	}
-#ifdef USE_PHYS
-	mfd = open("/dev/mem", O_RDWR | O_SYNC);
-	dbg_print("    mfd = %d", mfd);
-	buffer = mmap(NULL, DDR_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, DDR_START);
-//	memset(buffer, 0, DDR_SIZE);
-#else
-	buffer = aligned_alloc(CHARIO_BLOCK_SIZE, DDR_SIZE);
-//	memset(buffer, 0, DDR_SIZE);
-#endif
+
+	use_phys = phys_addressing;
+
+	if (use_phys) {
+		mfd = open("/dev/mem", O_RDWR | O_SYNC);
+		dbg_print("    mfd = %d", mfd);
+		buffer = mmap(NULL, DDR_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, DDR_START);
+//	        memset(buffer, 0, DDR_SIZE);
+	}
+	else {
+		buffer = aligned_alloc(CHARIO_BLOCK_SIZE, DDR_SIZE);
+//	        memset(buffer, 0, DDR_SIZE);
+	}
 	dbg_print("    buffer = 0x%08x", (unsigned)buffer);
 	return buffer;
 }
@@ -46,11 +49,12 @@ uint64_t *chario_init_device(void) {
 
 int chario_close_device(void) {
 	dbg_print("chario_close_device");
-#ifdef USE_PHYS
-	munmap(buffer, DDR_SIZE);
-#else
-	free(buffer);
-#endif
+	if (use_phys) {
+		munmap(buffer, DDR_SIZE);
+	}
+	else {
+		free(buffer);
+	}
 	buffer = 0;
 	close(mfd);
 	mfd = -1;
@@ -120,19 +124,23 @@ int chario_load_blocks_for_task(struct chario_task *task) {
 		dbg_print("        range->count = %zu", range->count);
 		dbg_print("        range->buffer_offset = %jd", (intmax_t)range->buffer_offset);
 
-#ifdef USE_PHYS
-		struct chario_phys_io io = {
-			.address = (__u64)(DDR_START + range->buffer_offset),
-			.length = (size_t)(range->count * CHARIO_BLOCK_SIZE)
-		};
-		lseek(fd, range->start * CHARIO_BLOCK_SIZE, SEEK_SET);
-		count = ioctl(fd, CHARIO_IOCTL_READ_PHYS, &io);
-		info_print("        read %zd of %zu bytes to 0x%08x (0x%08x)", count, range->count * CHARIO_BLOCK_SIZE, (unsigned)(DDR_START + range->buffer_offset), (unsigned)(buffer + range->buffer_offset));
-#else
-		lseek(fd, range->start * CHARIO_BLOCK_SIZE, SEEK_SET);
-		count = read(fd, buffer + (range->buffer_offset/8), range->count * CHARIO_BLOCK_SIZE);
-		info_print("        read %zd of %zu bytes to 0x%08x", count, range->count * CHARIO_BLOCK_SIZE, (unsigned)(buffer + (range->buffer_offset/8)));
-#endif
+		if (use_phys) {
+			struct chario_phys_io io = {
+				.address = (__u64) (DDR_START + range->buffer_offset),
+				.length = (size_t) (range->count * CHARIO_BLOCK_SIZE)
+			};
+			lseek(fd, range->start * CHARIO_BLOCK_SIZE, SEEK_SET);
+			count = ioctl(fd, CHARIO_IOCTL_READ_PHYS, &io);
+			info_print("        read %zd of %zu bytes to 0x%08x (0x%08x)", count,
+			           range->count * CHARIO_BLOCK_SIZE, (unsigned) (DDR_START + range->buffer_offset),
+			           (unsigned) (buffer + range->buffer_offset));
+		}
+		else {
+			lseek(fd, range->start * CHARIO_BLOCK_SIZE, SEEK_SET);
+			count = read(fd, buffer + (range->buffer_offset / 8), range->count * CHARIO_BLOCK_SIZE);
+			info_print("        read %zd of %zu bytes to 0x%08x", count, range->count * CHARIO_BLOCK_SIZE,
+			           (unsigned) (buffer + (range->buffer_offset / 8)));
+		}
 	}
 
 	return 0;
@@ -158,19 +166,23 @@ int chario_flush_blocks_for_task(struct chario_task *task) {
 		dbg_print("        range->count = %zu", range->count);
 		dbg_print("        range->buffer_offset = %jd", (intmax_t)range->buffer_offset);
 
-#ifdef USE_PHYS
-		struct chario_phys_io io = {
-			.address = (__u64)(DDR_START + range->buffer_offset),
-			.length = (size_t)(range->count * CHARIO_BLOCK_SIZE)
-		};
-		lseek(fd, range->start * CHARIO_BLOCK_SIZE, SEEK_SET);
-		count = ioctl(fd, CHARIO_IOCTL_WRITE_PHYS, &io);
-		info_print("        wrote %zd of %zu bytes from 0x%08x (0x%08x)", count, range->count * CHARIO_BLOCK_SIZE, (unsigned)(DDR_START + range->buffer_offset), (unsigned)(buffer + range->buffer_offset));
-#else
-		lseek(fd, range->start * CHARIO_BLOCK_SIZE, SEEK_SET);
-		count = write(fd, buffer + (range->buffer_offset/8), range->count * CHARIO_BLOCK_SIZE);
-		info_print("        wrote %zd of %zu bytes from 0x%08x", count, range->count * CHARIO_BLOCK_SIZE, (unsigned)(buffer + (range->buffer_offset/8)));
-#endif
+		if (use_phys) {
+			struct chario_phys_io io = {
+				.address = (__u64) (DDR_START + range->buffer_offset),
+				.length = (size_t) (range->count * CHARIO_BLOCK_SIZE)
+			};
+			lseek(fd, range->start * CHARIO_BLOCK_SIZE, SEEK_SET);
+			count = ioctl(fd, CHARIO_IOCTL_WRITE_PHYS, &io);
+			info_print("        wrote %zd of %zu bytes from 0x%08x (0x%08x)", count,
+			           range->count * CHARIO_BLOCK_SIZE, (unsigned) (DDR_START + range->buffer_offset),
+			           (unsigned) (buffer + range->buffer_offset));
+		}
+		else {
+			lseek(fd, range->start * CHARIO_BLOCK_SIZE, SEEK_SET);
+			count = write(fd, buffer + (range->buffer_offset / 8), range->count * CHARIO_BLOCK_SIZE);
+			info_print("        wrote %zd of %zu bytes from 0x%08x", count,
+			           range->count * CHARIO_BLOCK_SIZE, (unsigned) (buffer + (range->buffer_offset / 8)));
+		}
 	}
 
 	return 0;
