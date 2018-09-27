@@ -33,10 +33,18 @@ add_subdirectory(libs)
 add_subdirectory(tests)
 
 
-# Target to SCP to and make on Zynq
+# Target to SCP to and make on Zynq MITX
 add_custom_target(
         zynq-mitx
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         COMMAND rsync -druvh CMakeLists.txt include libs tests zynq-mitx:/root/chariort
         COMMAND ssh zynq-mitx 'cd /root/chariort && cmake . && make'
+)
+
+# Target to SCP to and make on ZCU102
+add_custom_target(
+        zcu102
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMAND rsync -druvh CMakeLists.txt include libs tests zcu102:/home/russell/chariort
+        COMMAND ssh zcu102 'cd /home/russell/chariort && cmake . && make'
 )

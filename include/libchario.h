@@ -11,12 +11,15 @@
 #define LIBCHARIO_INFO
 
 #define CHARIO_BLOCK_SIZE 4096
+#define CHARIO_BUFFER_SIZE 0x10000000
+#define CHARIO_DDR_START 0x20000000
 
 
 struct chario_task {
     int id;
     struct list_head ranges;
     unsigned range_count;
+    size_t total_count;
     size_t total_size;
 };
 
@@ -24,7 +27,20 @@ struct chario_blocks_range {
     struct list_head list;
     off_t start;
     size_t count;
+    size_t size;
     off_t buffer_offset;
+};
+
+struct chario_stack {
+    struct list_head items;
+    void *base;
+    void *top;
+    size_t total_size;
+};
+
+struct chario_stack_item {
+    struct list_head list;
+    struct chario_task *task;
 };
 
 
@@ -32,6 +48,8 @@ uint64_t *chario_init_device(bool phys_addressing);
 int chario_close_device(void);
 
 int chario_init_task(struct chario_task *task, int id);
+
+int chario_init_task_with_blockcount(struct chario_task *task, int id, size_t count);
 
 int chario_add_range_to_task(struct chario_task *task, size_t count, off_t offset);
 

@@ -1,6 +1,7 @@
 #ifndef CHARIO_H
 #define CHARIO_H
 
+#include <stddef.h>
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
